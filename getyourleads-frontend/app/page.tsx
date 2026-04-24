@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -81,21 +82,26 @@ export default function Home() {
     a.click();
   };
 
-  // ================= UI =================
   return (
-    <div className="flex h-screen bg-gray-50 text-gray-800">
+    <div className="flex h-screen bg-black text-white overflow-hidden">
 
       {/* Sidebar */}
-      <aside className="w-72 bg-white border-r p-5 flex flex-col">
-        <h1 className="text-xl font-bold mb-6">GetYourLeads</h1>
+      <motion.aside
+        initial={{ x: -100, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        className="w-72 bg-white/5 backdrop-blur-xl border-r border-white/10 p-5 flex flex-col"
+      >
+        <h1 className="text-xl font-semibold mb-6 tracking-tight">
+          GetYourLeads
+        </h1>
 
-        <h2 className="text-sm font-semibold text-gray-500 mb-2">
-          Recent Searches
-        </h2>
+        <p className="text-xs text-gray-400 mb-3">Recent</p>
 
-        <div className="flex-1 overflow-y-auto space-y-2">
+        <div className="space-y-2 overflow-y-auto">
           {history.map((item: any) => (
-            <div
+            <motion.div
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
               key={item.id}
               onClick={() => {
                 setKeyword(item.keyword);
@@ -103,72 +109,90 @@ export default function Home() {
                 setArea(item.area);
                 fetchLeads(1, limit);
               }}
-              className="p-3 rounded-lg border hover:bg-gray-100 cursor-pointer transition"
+              className="p-3 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer transition"
             >
-              <p className="font-medium">{item.keyword}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-sm">{item.keyword}</p>
+              <p className="text-xs text-gray-400">
                 {item.area}, {item.location}
               </p>
-            </div>
+            </motion.div>
           ))}
         </div>
-      </aside>
+      </motion.aside>
 
       {/* Main */}
       <main className="flex-1 flex flex-col">
 
         {/* Header */}
-        <div className="bg-white border-b px-6 py-4 flex justify-between items-center">
-          <h2 className="font-semibold text-lg">Lead Dashboard</h2>
+        <motion.div
+          initial={{ y: -40, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          className="flex justify-between items-center px-8 py-5 border-b border-white/10 backdrop-blur-xl bg-white/5"
+        >
+          <h2 className="text-lg font-medium">Lead Intelligence</h2>
 
-          <button
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={handleExport}
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow-sm"
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 rounded-xl shadow-lg"
           >
-            Export CSV
-          </button>
-        </div>
+            Export
+          </motion.button>
+        </motion.div>
 
         {/* Content */}
-        <div className="p-6 space-y-6 overflow-auto">
+        <div className="p-8 space-y-6 overflow-auto">
 
-          {/* Search Card */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border">
+          {/* Search */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl shadow-2xl"
+          >
             <div className="grid grid-cols-3 gap-4">
               <input
-                className="border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                className="bg-black/30 border border-white/10 rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
                 placeholder="Keyword"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
               />
               <input
-                className="border p-2 rounded-lg"
+                className="bg-black/30 border border-white/10 rounded-xl px-3 py-2"
                 placeholder="Location"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
               />
               <input
-                className="border p-2 rounded-lg"
+                className="bg-black/30 border border-white/10 rounded-xl px-3 py-2"
                 placeholder="Area"
                 value={area}
                 onChange={(e) => setArea(e.target.value)}
               />
             </div>
 
-            <button
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={handleSearch}
-              className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg"
+              className="mt-4 bg-gradient-to-r from-blue-500 to-purple-600 px-5 py-2 rounded-xl shadow-xl"
             >
               {loading ? "Searching..." : "Search"}
-            </button>
-          </div>
+            </motion.button>
+          </motion.div>
 
           {/* Results */}
-          <div className="bg-white rounded-xl shadow-sm border">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl"
+          >
 
-            {/* Controls */}
-            <div className="flex justify-between items-center p-4 border-b">
-              <span className="font-medium">Results</span>
+            {/* Top bar */}
+            <div className="flex justify-between items-center p-5 border-b border-white/10">
+              <span className="text-sm text-gray-300">
+                Results
+              </span>
 
               <select
                 value={limit}
@@ -176,7 +200,7 @@ export default function Home() {
                   setLimit(Number(e.target.value));
                   fetchLeads(1, Number(e.target.value));
                 }}
-                className="border rounded-lg p-2"
+                className="bg-black/30 border border-white/10 rounded-lg px-3 py-1"
               >
                 {[10, 20, 50, 100].map((v) => (
                   <option key={v}>{v} / page</option>
@@ -185,71 +209,79 @@ export default function Home() {
             </div>
 
             {/* Table */}
-            <div className="overflow-x-auto">
-              {loading ? (
-                <div className="p-6 text-center">Loading...</div>
-              ) : leads.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">
-                  No results yet
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100 text-gray-600">
-                    <tr>
-                      <th className="p-3 text-left">Name</th>
-                      <th className="p-3 text-left">Address</th>
-                      <th className="p-3 text-center">Rating</th>
-                      <th className="p-3 text-center">Maps</th>
-                    </tr>
-                  </thead>
+            {loading ? (
+              <div className="p-6 text-center text-gray-400 animate-pulse">
+                Loading leads...
+              </div>
+            ) : leads.length === 0 ? (
+              <div className="p-6 text-center text-gray-400">
+                No results
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="text-gray-400">
+                  <tr>
+                    <th className="p-4 text-left">Name</th>
+                    <th className="p-4 text-left">Address</th>
+                    <th className="p-4 text-center">Rating</th>
+                    <th className="p-4 text-center">Maps</th>
+                  </tr>
+                </thead>
 
-                  <tbody>
-                    {leads.map((lead, i) => (
-                      <tr key={i} className="border-t hover:bg-gray-50">
-                        <td className="p-3 font-medium">{lead.name}</td>
-                        <td className="p-3">{lead.address}</td>
-                        <td className="p-3 text-center">
-                          {lead.rating || "-"}
-                        </td>
-                        <td className="p-3 text-center">
-                          <a
-                            href={lead.maps_url}
-                            target="_blank"
-                            className="text-blue-600 hover:underline"
-                          >
-                            Open
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                <tbody>
+                  {leads.map((lead, i) => (
+                    <motion.tr
+                      key={i}
+                      whileHover={{ scale: 1.01 }}
+                      className="border-t border-white/5 hover:bg-white/5"
+                    >
+                      <td className="p-4 font-medium">{lead.name}</td>
+                      <td className="p-4 text-gray-300">
+                        {lead.address}
+                      </td>
+                      <td className="p-4 text-center">
+                        {lead.rating || "-"}
+                      </td>
+                      <td className="p-4 text-center">
+                        <a
+                          href={lead.maps_url}
+                          target="_blank"
+                          className="text-blue-400 hover:underline"
+                        >
+                          Open
+                        </a>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
 
             {/* Pagination */}
-            <div className="flex justify-between items-center p-4 border-t">
-              <button
+            <div className="flex justify-between items-center p-5 border-t border-white/10">
+              <motion.button
+                whileTap={{ scale: 0.9 }}
                 onClick={() => fetchLeads(page - 1)}
                 disabled={page === 1}
-                className="px-3 py-1 border rounded disabled:opacity-40"
+                className="px-3 py-1 border border-white/10 rounded"
               >
                 Prev
-              </button>
+              </motion.button>
 
-              <span className="text-sm">
-                Page {page} of {totalPages}
+              <span className="text-sm text-gray-400">
+                {page} / {totalPages}
               </span>
 
-              <button
+              <motion.button
+                whileTap={{ scale: 0.9 }}
                 onClick={() => fetchLeads(page + 1)}
                 disabled={page === totalPages}
-                className="px-3 py-1 border rounded disabled:opacity-40"
+                className="px-3 py-1 border border-white/10 rounded"
               >
                 Next
-              </button>
+              </motion.button>
             </div>
-          </div>
+          </motion.div>
         </div>
       </main>
     </div>
