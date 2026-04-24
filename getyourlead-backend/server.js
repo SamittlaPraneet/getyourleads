@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const axios = require("axios");
-const sqlite3 = require("sqlite3").verbose();
+const Database = require("better-sqlite3");
 const { Parser } = require("json2csv");
 
 dotenv.config();
@@ -15,35 +15,32 @@ const PORT = process.env.PORT || 5000;
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 // ================= DATABASE =================
-const db = new sqlite3.Database("./leads.db");
+const db = new Database("leads.db");
 
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS searches (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      keyword TEXT,
-      location TEXT,
-      area TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+// Create tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS searches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    keyword TEXT,
+    location TEXT,
+    area TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS leads (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      search_id INTEGER,
-      place_id TEXT UNIQUE,
-      name TEXT,
-      address TEXT,
-      rating REAL,
-      reviews INTEGER,
-      maps_url TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-});
+  CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id INTEGER,
+    place_id TEXT UNIQUE,
+    name TEXT,
+    address TEXT,
+    rating REAL,
+    reviews INTEGER,
+    maps_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
 
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
 // ================= FETCH =================
 const fetchLeads = async ({ keyword, location, area }) => {
@@ -100,33 +97,31 @@ const fetchLeads = async ({ keyword, location, area }) => {
       }
     );
 
-    allPlaces = [...allPlaces, ...(response.data.places || [])];
+    allPlaces.push(...(response.data.places || []));
     await delay(400);
   }
 
-  const uniqueMap = new Map();
-  allPlaces.forEach((place) => {
-    if (!uniqueMap.has(place.id)) {
-      uniqueMap.set(place.id, place);
-    }
+  const unique = new Map();
+  allPlaces.forEach((p) => {
+    if (!unique.has(p.id)) unique.set(p.id, p);
   });
 
-  let results = Array.from(uniqueMap.values());
+  let results = Array.from(unique.values());
 
   if (area) {
     const areaLower = area.toLowerCase();
-    results = results.filter((place) =>
-      place.formattedAddress?.toLowerCase().includes(areaLower)
+    results = results.filter((p) =>
+      p.formattedAddress?.toLowerCase().includes(areaLower)
     );
   }
 
-  return results.map((place) => ({
-    place_id: place.id,
-    name: place.displayName?.text || "",
-    address: place.formattedAddress || "",
-    rating: place.rating || null,
-    reviews: place.userRatingCount || 0,
-    maps_url: `https://www.google.com/maps/place/?q=place_id:${place.id}`,
+  return results.map((p) => ({
+    place_id: p.id,
+    name: p.displayName?.text || "",
+    address: p.formattedAddress || "",
+    rating: p.rating || null,
+    reviews: p.userRatingCount || 0,
+    maps_url: `https://www.google.com/maps/place/?q=place_id:${p.id}`,
   }));
 };
 
@@ -139,92 +134,75 @@ app.post("/api/search-leads", async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
 
-    db.get(
-      `SELECT * FROM searches 
-       WHERE keyword=? AND location=? AND area=? 
-       ORDER BY created_at DESC LIMIT 1`,
-      [keyword, location, area],
-      async (err, existingSearch) => {
-        if (err) return res.status(500).json({ error: "DB error" });
+    const existingSearch = db
+      .prepare(
+        `SELECT * FROM searches WHERE keyword=? AND location=? AND area=? ORDER BY created_at DESC LIMIT 1`
+      )
+      .get(keyword, location, area);
 
-        // ================= CACHE HIT =================
-        if (existingSearch) {
-          db.get(
-            `SELECT COUNT(*) as total FROM leads WHERE search_id=?`,
-            [existingSearch.id],
-            (err, countResult) => {
-              if (err) return res.status(500).json({ error: "DB error" });
+    // CACHE HIT
+    if (existingSearch) {
+      const total = db
+        .prepare(`SELECT COUNT(*) as count FROM leads WHERE search_id=?`)
+        .get(existingSearch.id).count;
 
-              db.all(
-                `SELECT * FROM leads WHERE search_id=? LIMIT ? OFFSET ?`,
-                [existingSearch.id, limit, offset],
-                (err, rows) => {
-                  if (err) return res.status(500).json({ error: "DB error" });
+      const rows = db
+        .prepare(
+          `SELECT * FROM leads WHERE search_id=? LIMIT ? OFFSET ?`
+        )
+        .all(existingSearch.id, limit, offset);
 
-                  return res.json({
-                    total: countResult.total,
-                    page,
-                    limit,
-                    total_pages: Math.ceil(countResult.total / limit),
-                    cached: true,
-                    search_id: existingSearch.id, // ✅ FIX
-                    leads: rows,
-                  });
-                }
-              );
-            }
-          );
-          return;
-        }
+      return res.json({
+        total,
+        page,
+        limit,
+        total_pages: Math.ceil(total / limit),
+        cached: true,
+        search_id: existingSearch.id,
+        leads: rows,
+      });
+    }
 
-        // ================= FIRST SEARCH =================
-        const leads = await fetchLeads({ keyword, location, area });
+    // NEW SEARCH
+    const leads = await fetchLeads({ keyword, location, area });
 
-        db.run(
-          `INSERT INTO searches (keyword, location, area) VALUES (?, ?, ?)`,
-          [keyword, location, area],
-          function (err) {
-            if (err) return res.status(500).json({ error: "Insert failed" });
+    const insertSearch = db
+      .prepare(`INSERT INTO searches (keyword, location, area) VALUES (?, ?, ?)`)
+      .run(keyword, location, area);
 
-            const searchId = this.lastID;
+    const searchId = insertSearch.lastInsertRowid;
 
-            const stmt = db.prepare(`
-              INSERT OR IGNORE INTO leads 
-              (search_id, place_id, name, address, rating, reviews, maps_url)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `);
+    const stmt = db.prepare(`
+      INSERT OR IGNORE INTO leads
+      (search_id, place_id, name, address, rating, reviews, maps_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
 
-            leads.forEach((lead) => {
-              stmt.run(
-                searchId,
-                lead.place_id,
-                lead.name,
-                lead.address,
-                lead.rating,
-                lead.reviews,
-                lead.maps_url
-              );
-            });
+    leads.forEach((l) => {
+      stmt.run(
+        searchId,
+        l.place_id,
+        l.name,
+        l.address,
+        l.rating,
+        l.reviews,
+        l.maps_url
+      );
+    });
 
-            stmt.finalize();
+    const paginated = leads.slice(offset, offset + limit);
 
-            const paginatedLeads = leads.slice(offset, offset + limit);
-
-            return res.json({
-              total: leads.length,
-              page,
-              limit,
-              total_pages: Math.ceil(leads.length / limit),
-              cached: false,
-              search_id: searchId, // ✅ FIX
-              leads: paginatedLeads,
-            });
-          }
-        );
-      }
-    );
-  } catch (error) {
-    console.error(error);
+    res.json({
+      total: leads.length,
+      page,
+      limit,
+      total_pages: Math.ceil(leads.length / limit),
+      cached: false,
+      search_id: searchId,
+      leads: paginated,
+    });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Search failed" });
   }
 });
@@ -233,35 +211,31 @@ app.post("/api/search-leads", async (req, res) => {
 app.post("/api/export-leads", (req, res) => {
   const { search_id } = req.body;
 
-  db.all(
-    `SELECT * FROM leads WHERE search_id=?`,
-    [search_id],
-    (err, rows) => {
-      if (err) return res.status(500).json({ error: "DB error" });
+  const rows = db
+    .prepare(`SELECT * FROM leads WHERE search_id=?`)
+    .all(search_id);
 
-      const parser = new Parser();
-      const csv = parser.parse(rows);
+  const parser = new Parser();
+  const csv = parser.parse(rows);
 
-      res.header("Content-Type", "text/csv");
-      res.attachment(`leads_${search_id}.csv`);
-      res.send(csv);
-    }
-  );
+  res.header("Content-Type", "text/csv");
+  res.attachment(`leads_${search_id}.csv`);
+  res.send(csv);
 });
 
-// ================= SEARCH HISTORY =================
+// ================= HISTORY =================
 app.get("/api/search-history", (req, res) => {
-  db.all(`SELECT * FROM searches ORDER BY created_at DESC`, [], (err, rows) => {
-    if (err) return res.status(500).json({ error: "DB error" });
-    res.json(rows);
-  });
+  const rows = db
+    .prepare(`SELECT * FROM searches ORDER BY created_at DESC`)
+    .all();
+
+  res.json(rows);
 });
 
 // ================= DEBUG =================
 app.get("/api/debug-leads-count", (req, res) => {
-  db.get(`SELECT COUNT(*) as count FROM leads`, [], (err, row) => {
-    res.json({ total_leads_in_db: row.count });
-  });
+  const count = db.prepare(`SELECT COUNT(*) as count FROM leads`).get().count;
+  res.json({ total_leads_in_db: count });
 });
 
 app.listen(PORT, () => {
