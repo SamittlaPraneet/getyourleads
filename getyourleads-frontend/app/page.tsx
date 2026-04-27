@@ -6,12 +6,17 @@ import { motion } from "framer-motion";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Home() {
+  // ================= FORM =================
   const [keyword, setKeyword] = useState("");
-  const [location, setLocation] = useState("");
-  const [area, setArea] = useState("");
+  const [country, setCountry] = useState("");
+  const [stateVal, setStateVal] = useState("");
+  const [city, setCity] = useState("");
+  const [street, setStreet] = useState("");
+  const [radius, setRadius] = useState(""); // optional
 
+  // ================= DATA =================
   const [leads, setLeads] = useState<any[]>([]);
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [searchId, setSearchId] = useState<number | null>(null);
@@ -31,7 +36,7 @@ export default function Home() {
     fetchHistory();
   }, []);
 
-  // ================= NEW SEARCH =================
+  // ================= SEARCH =================
   const handleSearch = async () => {
     setLoading(true);
 
@@ -42,7 +47,14 @@ export default function Home() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ keyword, location, area }),
+        body: JSON.stringify({
+          keyword,
+          country,
+          state: stateVal,
+          city,
+          street,
+          radius: radius ? Number(radius) : null,
+        }),
       }
     );
 
@@ -75,11 +87,14 @@ export default function Home() {
     setLoading(false);
   };
 
-  // ================= HISTORY CLICK =================
+  // ================= HISTORY =================
   const handleHistoryClick = (item: any) => {
     setKeyword(item.keyword);
-    setLocation(item.location);
-    setArea(item.area);
+    setCountry(item.country || "");
+    setStateVal(item.state || "");
+    setCity(item.city || "");
+    setStreet(item.street || "");
+    setRadius(item.radius || "");
 
     fetchBySearchId(item.id, 1, limit);
   };
@@ -95,12 +110,10 @@ export default function Home() {
     fetchBySearchId(searchId, page - 1, limit);
   };
 
-  // ================= LIMIT CHANGE =================
-  const handleLimitChange = async (newLimit: number) => {
+  // ================= LIMIT =================
+  const handleLimitChange = (newLimit: number) => {
     setLimit(newLimit);
-
     if (!searchId) return;
-
     fetchBySearchId(searchId, 1, newLimit);
   };
 
@@ -128,11 +141,11 @@ export default function Home() {
   return (
     <div className="flex h-screen bg-black text-white overflow-hidden">
 
-      {/* Sidebar */}
+      {/* SIDEBAR */}
       <aside className="w-72 bg-white/5 backdrop-blur-xl border-r border-white/10 p-5 flex flex-col">
         <h1 className="text-xl font-semibold mb-6">GetYourLeads</h1>
 
-        <p className="text-xs text-gray-400 mb-3">Recent</p>
+        <p className="text-xs text-gray-400 mb-3">Recent Searches</p>
 
         <div className="space-y-2 overflow-y-auto">
           {history.map((item: any) => (
@@ -145,17 +158,17 @@ export default function Home() {
             >
               <p className="text-sm">{item.keyword}</p>
               <p className="text-xs text-gray-400">
-                {item.area}, {item.location}
+                {item.city}, {item.state}
               </p>
             </motion.div>
           ))}
         </div>
       </aside>
 
-      {/* Main */}
+      {/* MAIN */}
       <main className="flex-1 flex flex-col">
 
-        {/* Header */}
+        {/* HEADER */}
         <div className="flex justify-between items-center px-8 py-5 border-b border-white/10">
           <h2 className="text-lg">Lead Intelligence</h2>
 
@@ -167,30 +180,49 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Content */}
+        {/* CONTENT */}
         <div className="p-8 space-y-6 overflow-auto">
 
-          {/* Search */}
+          {/* SEARCH FORM */}
           <div className="bg-white/5 p-6 rounded-2xl border border-white/10">
             <div className="grid grid-cols-3 gap-4">
-              <input
+
+              <input placeholder="Keyword"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                placeholder="Keyword"
-                className="bg-black/30 border border-white/10 rounded-xl px-3 py-2"
+                className="bg-black/30 border border-white/10 px-3 py-2 rounded-xl"
               />
-              <input
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Location"
-                className="bg-black/30 border border-white/10 rounded-xl px-3 py-2"
+
+              <input placeholder="Country"
+                value={country}
+                onChange={(e) => setCountry(e.target.value)}
+                className="bg-black/30 border border-white/10 px-3 py-2 rounded-xl"
               />
-              <input
-                value={area}
-                onChange={(e) => setArea(e.target.value)}
-                placeholder="Area"
-                className="bg-black/30 border border-white/10 rounded-xl px-3 py-2"
+
+              <input placeholder="State"
+                value={stateVal}
+                onChange={(e) => setStateVal(e.target.value)}
+                className="bg-black/30 border border-white/10 px-3 py-2 rounded-xl"
               />
+
+              <input placeholder="City"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="bg-black/30 border border-white/10 px-3 py-2 rounded-xl"
+              />
+
+              <input placeholder="Street"
+                value={street}
+                onChange={(e) => setStreet(e.target.value)}
+                className="bg-black/30 border border-white/10 px-3 py-2 rounded-xl"
+              />
+
+              <input placeholder="Radius (meters - optional)"
+                value={radius}
+                onChange={(e) => setRadius(e.target.value)}
+                className="bg-black/30 border border-white/10 px-3 py-2 rounded-xl"
+              />
+
             </div>
 
             <button
@@ -201,7 +233,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Results */}
+          {/* RESULTS */}
           <div className="bg-white/5 rounded-2xl border border-white/10">
 
             <div className="flex justify-between p-4 border-b border-white/10">
@@ -248,6 +280,7 @@ export default function Home() {
               <span>{page} / {totalPages}</span>
               <button onClick={handleNext}>Next</button>
             </div>
+
           </div>
         </div>
       </main>
