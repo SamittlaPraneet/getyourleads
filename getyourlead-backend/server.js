@@ -21,8 +21,11 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS searches (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   keyword TEXT,
-  location TEXT,
-  area TEXT,
+  country TEXT,
+  state TEXT,
+  city TEXT,
+  street TEXT,
+  radius INTEGER,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -38,13 +41,25 @@ CREATE TABLE IF NOT EXISTS leads (
 );
 `);
 
-// ================= FETCH =================
-const fetchLeadsFromGoogle = async ({ keyword, location, area }) => {
+// ================= FETCH FROM GOOGLE =================
+const fetchLeads = async ({
+  keyword,
+  country,
+  state,
+  city,
+  street,
+  radius,
+}) => {
+  const fullLocation = [street, city, state, country]
+    .filter(Boolean)
+    .join(", ");
+
+  // STEP 1: Get lat/lng
   const geo = await axios.get(
     "https://maps.googleapis.com/maps/api/geocode/json",
     {
       params: {
-        address: `${area || ""} ${location}`,
+        address: fullLocation,
         key: API_KEY,
       },
     }
@@ -52,29 +67,21 @@ const fetchLeadsFromGoogle = async ({ keyword, location, area }) => {
 
   const { lat, lng } = geo.data.results[0].geometry.location;
 
-  const step = 0.01;
-  const grid = [];
-
-  for (let i of [-step, 0, step]) {
-    for (let j of [-step, 0, step]) {
-      grid.push({ lat: lat + i, lng: lng + j });
-    }
-  }
-
   let all = [];
 
-  for (let p of grid) {
+  // ================= RADIUS SEARCH =================
+  if (radius) {
     const res = await axios.post(
       "https://places.googleapis.com/v1/places:searchText",
       {
-        textQuery: `${keyword} in ${area || location}`,
+        textQuery: `${keyword} near ${fullLocation}`,
         locationBias: {
           circle: {
             center: {
-              latitude: p.lat,
-              longitude: p.lng,
+              latitude: lat,
+              longitude: lng,
             },
-            radius: 1200,
+            radius: radius,
           },
         },
       },
@@ -88,9 +95,48 @@ const fetchLeadsFromGoogle = async ({ keyword, location, area }) => {
       }
     );
 
-    all.push(...(res.data.places || []));
+    all = res.data.places || [];
+  } else {
+    // ================= GRID SEARCH (OLD LOGIC) =================
+    const step = 0.01;
+    const grid = [];
+
+    for (let i of [-step, 0, step]) {
+      for (let j of [-step, 0, step]) {
+        grid.push({ lat: lat + i, lng: lng + j });
+      }
+    }
+
+    for (let p of grid) {
+      const res = await axios.post(
+        "https://places.googleapis.com/v1/places:searchText",
+        {
+          textQuery: `${keyword} in ${fullLocation}`,
+          locationBias: {
+            circle: {
+              center: {
+                latitude: p.lat,
+                longitude: p.lng,
+              },
+              radius: 1200,
+            },
+          },
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Api-Key": API_KEY,
+            "X-Goog-FieldMask":
+              "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.id",
+          },
+        }
+      );
+
+      all.push(...(res.data.places || []));
+    }
   }
 
+  // ================= DEDUP =================
   const map = new Map();
   all.forEach((p) => {
     if (!map.has(p.id)) map.set(p.id, p);
@@ -108,18 +154,19 @@ const fetchLeadsFromGoogle = async ({ keyword, location, area }) => {
 
 // ================= SEARCH =================
 app.post("/api/search-leads", async (req, res) => {
-  const { keyword, location, area } = req.body;
+  const { keyword, country, state, city, street, radius } = req.body;
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
 
-  // CHECK CACHE
+  // CACHE CHECK
   const existing = db
     .prepare(
-      `SELECT * FROM searches WHERE keyword=? AND location=? AND area=?`
+      `SELECT * FROM searches 
+       WHERE keyword=? AND country=? AND state=? AND city=? AND street=? AND radius IS ?`
     )
-    .get(keyword, location, area);
+    .get(keyword, country, state, city, street, radius || null);
 
   if (existing) {
     const total = db
@@ -138,17 +185,26 @@ app.post("/api/search-leads", async (req, res) => {
       page,
       total_pages: Math.ceil(total / limit),
       leads: rows,
+      cached: true,
     });
   }
 
   // NEW SEARCH
-  const leads = await fetchLeadsFromGoogle({ keyword, location, area });
+  const leads = await fetchLeads({
+    keyword,
+    country,
+    state,
+    city,
+    street,
+    radius,
+  });
 
   const result = db
     .prepare(
-      `INSERT INTO searches (keyword, location, area) VALUES (?, ?, ?)`
+      `INSERT INTO searches (keyword, country, state, city, street, radius)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(keyword, location, area);
+    .run(keyword, country, state, city, street, radius || null);
 
   const searchId = result.lastInsertRowid;
 
@@ -175,10 +231,11 @@ app.post("/api/search-leads", async (req, res) => {
     page,
     total_pages: Math.ceil(leads.length / limit),
     leads: leads.slice(offset, offset + limit),
+    cached: false,
   });
 });
 
-// ================= GET LEADS BY SEARCH =================
+// ================= GET LEADS =================
 app.get("/api/leads", (req, res) => {
   const { search_id, page = 1, limit = 10 } = req.query;
 
